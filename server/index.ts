@@ -14,6 +14,7 @@ import {
   type Message,
   MessageSender,
   MessageStatus,
+  QueryMessagesArgs,
   type Resolvers,
 } from "../__generated__/resolvers-types";
 import { delay } from "./delay";
@@ -92,7 +93,7 @@ const typeDefs = `#graphql
   }
 
   type Query {
-    messages(first: Int, after: MessagesCursor, before: MessagesCursor): MessagePage!
+    messages(first: Int, after: MessagesCursor, last: Int, before: MessagesCursor): MessagePage!
   }
 
   type Mutation {
@@ -107,39 +108,49 @@ const typeDefs = `#graphql
 
 const resolvers: Resolvers = {
   Query: {
-    messages: (_, { first, after, before }) => {
-      // Convert cursors to indexes
+    messages: (_, { first, after, last, before }) => {
       const afterIndex = after
         ? messages.findIndex((msg) => msg.id === after)
         : -1;
+
       const beforeIndex = before
         ? messages.findIndex((msg) => msg.id === before)
         : messages.length;
 
-      // Filter and paginate the data
-      const slicedMessages = messages.slice(afterIndex + 1, beforeIndex);
-      const paginatedMessages = slicedMessages.slice(0, first || 10);
+      let slicedMessages = messages.slice(afterIndex + 1, beforeIndex);
 
-      // Create edges
+      let paginatedMessages;
+      if (first != null) {
+        paginatedMessages = slicedMessages.slice(0, first);
+      } else if (last != null) {
+        paginatedMessages = slicedMessages.slice(-last);
+      } else {
+        paginatedMessages = slicedMessages.slice(-10); // fallback
+      }
+
       const edges = paginatedMessages.map((message) => ({
         node: message,
         cursor: message.id,
       }));
 
-      // Calculate pageInfo
       const startCursor = edges.length > 0 ? edges[0].cursor : null;
       const endCursor =
         edges.length > 0 ? edges[edges.length - 1].cursor : null;
+
+      const startIndex = startCursor
+        ? messages.findIndex((m) => m.id === startCursor)
+        : -1;
+      const endIndex = endCursor
+        ? messages.findIndex((m) => m.id === endCursor)
+        : -1;
 
       return {
         edges,
         pageInfo: {
           startCursor,
           endCursor,
-          hasNextPage:
-            beforeIndex < messages.length ||
-            slicedMessages.length > (first || 10),
-          hasPreviousPage: afterIndex >= 0,
+          hasPreviousPage: startIndex > 0,
+          hasNextPage: endIndex < messages.length - 1,
         },
       };
     },
@@ -242,24 +253,25 @@ httpServer.listen(PORT, () => {
   );
 });
 
+let autoMessageCounter = messages.length; // стартовый ID
+
 const asyncReplyMessage = () => {
-  let timeout = setTimeout(() => {
-    clearTimeout(timeout);
-    if (messages[messages.length - 1]?.sender === MessageSender.Admin) {
-      const index = messages.length + 1;
+  setTimeout(() => {
+    // проверяем только наш внутренний счётчик
+    autoMessageCounter += 1;
 
-      const messageAdded: Message = {
-        id: `${index}`,
-        text: `Message number ${index}`,
-        status: MessageStatus.Sent,
-        updatedAt: new Date().toISOString(),
-        sender: MessageSender.Customer,
-      };
+    const messageAdded: Message = {
+      id: `auto-${autoMessageCounter}`, // уникальный ID
+      text: `Message number ${autoMessageCounter}`,
+      status: MessageStatus.Sent,
+      updatedAt: new Date().toISOString(),
+      sender: MessageSender.Customer,
+    };
 
-      pubsub.publish(MESSAGE_ADDED, { messageAdded });
-    }
+    messages.push(messageAdded);
+    pubsub.publish(MESSAGE_ADDED, { messageAdded });
 
-    asyncReplyMessage();
+    asyncReplyMessage(); // рекурсивно
   }, 30000);
 };
 

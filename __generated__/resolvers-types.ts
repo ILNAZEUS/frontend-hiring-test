@@ -87,6 +87,7 @@ export type Query = {
 export type QueryMessagesArgs = {
   after?: InputMaybe<Scalars["MessagesCursor"]>;
   before?: InputMaybe<Scalars["MessagesCursor"]>;
+  last: InputMaybe<Scalars["Int"]>;
   first?: InputMaybe<Scalars["Int"]>;
 };
 

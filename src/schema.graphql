@@ -31,7 +31,12 @@ type MessagePage {
 }
 
 type Query {
-  messages(first: Int, after: MessagesCursor, before: MessagesCursor): MessagePage!
+  messages(
+    first: Int
+    last: Int
+    after: MessagesCursor
+    before: MessagesCursor
+  ): MessagePage!
 }
 
 type Mutation {
